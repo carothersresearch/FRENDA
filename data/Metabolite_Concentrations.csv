@@ -1,0 +1,66 @@
+﻿Enzyme,KEGG,Concentration
+3-Phospho-D-glyceroyl phosphate,C00236,0
+2-Dehydro-3-deoxy-D-gluconate 6-phosphate,C04442,0
+D-Glycerate 2-phosphate,C00631,0
+3-Phospho-D-glycerate,C00197,1.5
+6-Phospho-D-gluconate,C00345,3.8
+"6-phospho-D-glucono-1,5-lactone",C01236,0
+Acetate,D00010,69.3206
+Acetaldehyde,C00084,0
+Acetyl-CoA,C00024,0.61
+Aconitase,C00024,0
+Acetyl- phosphate,C00227,1.1
+Adenosine diphosphate,G11113,0.1
+2-Oxoglutarate,C00026,0.44
+Adenosine monophosphate,D02769,10
+Adenosine triphosphate,D08646,0.1
+Citrate,D00037,2
+Carbon dioxide,D00004,0.015
+Dihydroxyacetone phosphate,C00111,0.37
+D-Erythrose 4-phosphate,C00279,0
+Ethanol,D06542,7.926
+D_Fructose 6-phosphate,C05345,3.8
+"D-Fructose 1,6-bisphosphate",C00354,15
+Formate,C00058,0
+Fumarate,D02308,0.12
+Glyceraldehyde 3-phosphate,C00661,0
+D-Glucose 6-phosphate,C00092,5
+L-Glutamine,C00303,3.8
+L-Glutamate,D04341,96
+Glyoxylate,C00048,0
+H+,C00080,0.0001
+Water,C01328,55000
+Isocitrate,C00451,0
+D-Lactate,C00256,3.25
+L-Malate,C00149,1.7
+Nicotinamide adenine dinucleotide,D00002,2.6
+Nicotinamide adenine dinucleotide - reduced,C00004,0.083
+Nicotinamide adenine dinucleotide phosphate,C00006,0.0021
+Nicotinamide adenine dinucleotide phosphate - reduced,C00005,0.12
+Ammonium,C01342,15
+O2,D00003,0.275
+Oxaloacetate,C00036,0
+Phosphoenolpyruvate,C00074,0.18
+Phosphate,D05467,40
+Pyruvate,C00022,0
+Ubiquinone-8,C17569,1
+Ubiquinol-8,C17569,1
+Alpha-D-Ribose 5-phosphate,C00117,0.5
+D-Ribose,C21057,0
+D-Ribulose 5-phosphate,C00199,0.5
+Sedoheptulose 7-phosphate,C05382,0
+Succinate,C00042,7.1692
+Succinyl-CoA,C00091,0.23
+D-Xylulose 5-phosphate,C00231,0.5
+Pyrophosphate,C00013,0
+Fructose,D00114,0
+D-Glucose,D00009,129.7645
+Acetoacetyl-CoA,C00332,0.022
+3-hydroxybutyryl-CoA,C03561,0
+Ctrononyl-CoA,C00877,0
+Butyryl-CoA,C00136,0
+Butyraldehyde,C01412,0
+1-Butanol,D03200,0
+CoA,C00010,1.4
+CO2 (gaseous),C02403,0.0184
+O2 (gaseous),C00023,8.6
