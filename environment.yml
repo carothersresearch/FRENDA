@@ -1,0 +1,14 @@
+name: frenda
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas>=2.0
+  - requests
+  - pip
+  - pip:
+    - brendapyrser==0.0.2
+    - equilibrator-api==0.7.0
+    - antimony          # optional: only needed for --sbml export
