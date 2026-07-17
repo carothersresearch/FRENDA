@@ -154,8 +154,8 @@ The `data/` directory already contains the KEGG snapshots and metabolite concent
 ## Quick Start
 
 ```bash
+# from the repository root (the folder containing frenda/, data/, examples/, ...)
 conda activate frenda
-cd FRENDA
 
 python -m frenda.pipeline examples/proteome_exe.csv \
     --organism "Escherichia coli" \
@@ -425,7 +425,7 @@ python antotate.py <model_file> [--databases kegg chebi hmdb] [--confidence-out 
 
 ```bash
 cd annotating/
-python antotate.py ../FRENDA/frenda_output/model.ant \
+python antotate.py ../frenda_output/model.ant \
     --databases kegg chebi hmdb \
     --confidence-out annotation_confidence.csv
 ```
@@ -473,10 +473,10 @@ python -m odbm.convert results/Reaction.csv results/SpeciesBaseMechanisms.csv \
     --output results/model.ant
 
 # Step 3: Annotate
-cd ../annotating/
-python antotate.py ../FRENDA/results/model.ant \
+cd annotating/
+python antotate.py ../results/model.ant \
     --databases kegg chebi \
-    --confidence-out ../FRENDA/results/annotation_confidence.csv
+    --confidence-out ../results/annotation_confidence.csv
 ```
 
 **Result:** `results/model_kegg_chebi.ant` — a fully parameterized, annotated ODE model ready for simulation in Tellurium, COPASI, or any SBML-compatible tool.
@@ -582,7 +582,7 @@ Keq values are computed from ΔG°' at pH 7, 25 °C, ionic strength 0.1 M. Extre
 Ensure `dilution_factor` is set to 1 (or your desired value) before simulation. Parameters that are `nan` in the CSV will appear as `nan` in the model and must be set manually before simulating.
 
 ### `python -m odbm.convert` finds the wrong `odbm` package
-If there is another `odbm` package on your Python path, run the converter via a script from the `FRENDA/` directory:
+If there is another `odbm` package on your Python path, run the converter via a script from the repository root directory:
 ```python
 # run_convert.py
 import sys, pathlib
