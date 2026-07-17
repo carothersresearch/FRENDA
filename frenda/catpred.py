@@ -11,6 +11,7 @@ GitHub: https://github.com/maranasgroup/CatPred
 import json
 import logging
 import pickle
+import re
 import time
 from pathlib import Path
 
@@ -24,7 +25,28 @@ _UNIPROT_SEARCH = "https://rest.uniprot.org/uniprotkb/search"
 _PUBCHEM_BY_NAME = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/property/IsomericSMILES/JSON"
 _PUBCHEM_BY_XREF = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/xref/RegistryID/{}/property/IsomericSMILES/JSON"
 _KEGG_COMPOUND = "https://rest.kegg.jp/get/{}"
+_PUBCHEM_SID_TO_CID = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/substance/sid/{}/cids/JSON"
+_PUBCHEM_BY_CID = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/property/IsomericSMILES/JSON"
 _CATPRED_PREDICT = "{base}/predict"  # POST endpoint; base URL is https://www.catpred.com
+
+# Small ions/cofactors with no real enzyme-substrate structure to learn from.
+# CatPred's backend reliably 500s on these (e.g. a bare "[H+]" SMILES crashes
+# its featurization step), so we skip the network round-trip entirely.
+_TRIVIAL_COMPOUNDS = {
+    "C00080",  # H+
+    "C00001",  # H2O
+    "C00007",  # O2
+    "C00011",  # CO2
+    "C00014",  # NH3
+    "C00009",  # orthophosphate (Pi)
+    "C00013",  # diphosphate (PPi)
+    "C00238",  # K+
+    "C00076",  # Ca2+
+    "C00070",  # Cu2+
+    "C01330",  # Na+
+    "C00291",  # Cl-
+    "C00305",  # Mg2+
+}
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +99,12 @@ def fetch_smiles_for_kegg_id(
       1. PubChem cross-reference by KEGG registry ID
       2. PubChem name lookup using the preferred name from compound_names
       3. KEGG REST API to get the compound name, then PubChem name lookup
+      4. KEGG REST API's own PubChem SID cross-reference (DBLINKS), resolved
+         to a CID and looked up directly — catches compounds PubChem doesn't
+         index under a matching name or "RegistryID" xref (steps 1-3 fail
+         for generic/templated KEGG compounds like CoA- or ACP-linked
+         intermediates, which have no concrete PubChem CID at all; in that
+         case this also returns None).
 
     Args:
         kegg_id: KEGG compound ID (e.g., "C00001")
@@ -97,12 +125,20 @@ def fetch_smiles_for_kegg_id(
         if smiles:
             return smiles
 
-    # 3. Fetch compound name from KEGG REST, then try PubChem
-    name = _kegg_compound_name(kegg_id)
-    if name:
-        smiles = _pubchem_by_name(name)
-        if smiles:
-            return smiles
+    # 3 & 4. Fetch the KEGG entry once; try its NAME, then its PubChem SID xref
+    entry_text = _kegg_entry_text(kegg_id)
+    if entry_text:
+        name = _parse_kegg_name(entry_text)
+        if name:
+            smiles = _pubchem_by_name(name)
+            if smiles:
+                return smiles
+
+        sid = _parse_kegg_pubchem_sid(entry_text)
+        if sid:
+            smiles = _pubchem_by_sid(sid)
+            if smiles:
+                return smiles
 
     logger.warning("Could not retrieve SMILES for KEGG compound %s", kegg_id)
     return None
@@ -134,15 +170,48 @@ def _pubchem_by_name(name: str) -> str | None:
     return None
 
 
-def _kegg_compound_name(kegg_id: str) -> str | None:
-    """Call the KEGG REST API to get a compound's primary name."""
+def _kegg_entry_text(kegg_id: str) -> str | None:
+    """Fetch the raw KEGG flat-file entry text for a compound."""
     try:
         resp = requests.get(_KEGG_COMPOUND.format(kegg_id), timeout=10)
         if resp.status_code == 200:
-            for line in resp.text.splitlines():
-                if line.startswith("NAME"):
-                    return line.split(None, 1)[1].strip().rstrip(";")
+            return resp.text
     except requests.RequestException:
+        pass
+    return None
+
+
+def _parse_kegg_name(entry_text: str) -> str | None:
+    """Extract the primary NAME field from a KEGG flat-file entry."""
+    for line in entry_text.splitlines():
+        if line.startswith("NAME"):
+            return line.split(None, 1)[1].strip().rstrip(";")
+    return None
+
+
+def _parse_kegg_pubchem_sid(entry_text: str) -> str | None:
+    """Extract the PubChem Substance ID from a KEGG entry's DBLINKS section."""
+    match = re.search(r"PubChem:\s*(\d+)", entry_text)
+    return match.group(1) if match else None
+
+
+def _pubchem_by_sid(sid: str) -> str | None:
+    """Resolve a PubChem SID to a CID, then fetch its IsomericSMILES."""
+    try:
+        resp = requests.get(_PUBCHEM_SID_TO_CID.format(sid), timeout=15)
+        if resp.status_code != 200:
+            return None
+        cids = resp.json().get("InformationList", {}).get("Information", [{}])[0].get("CID")
+        if not cids:
+            return None
+        cid = cids[0]
+
+        resp = requests.get(_PUBCHEM_BY_CID.format(cid), timeout=15)
+        if resp.status_code == 200:
+            props = resp.json().get("PropertyTable", {}).get("Properties", [])
+            if props:
+                return props[0].get("IsomericSMILES") or props[0].get("SMILES")
+    except (requests.RequestException, ValueError, KeyError, IndexError):
         pass
     return None
 
@@ -219,6 +288,7 @@ def get_kinetics_catpred(
     compound_names: dict | None = None,
     sequence_cache: dict | None = None,
     smiles_cache: dict | None = None,
+    prediction_cache: dict | None = None,
 ) -> tuple[float, float]:
     """Predict kcat and Km for one (enzyme, substrate) pair using CatPred.
 
@@ -233,14 +303,27 @@ def get_kinetics_catpred(
         compound_names: KEGG ID -> name mapping to aid SMILES lookup
         sequence_cache: persistent dict caching EC -> sequence (modified in place)
         smiles_cache: persistent dict caching KEGG ID -> SMILES (modified in place)
+        prediction_cache: persistent dict caching (ec, organism, kegg_id) ->
+            (kcat, km), so repeat pipeline runs skip the slow CatPred call
+            entirely for pairs already predicted (modified in place)
 
     Returns:
         (kcat, km) tuple; either value may be NaN if prediction fails.
     """
+    if kegg_id in _TRIVIAL_COMPOUNDS:
+        logger.debug("Skipping CatPred for %s: trivial ion/cofactor, not a real substrate", kegg_id)
+        return np.nan, np.nan
+
     if sequence_cache is None:
         sequence_cache = {}
     if smiles_cache is None:
         smiles_cache = {}
+    if prediction_cache is None:
+        prediction_cache = {}
+
+    pred_key = f"{ec}|{organism or ''}|{kegg_id}"
+    if pred_key in prediction_cache:
+        return prediction_cache[pred_key]
 
     # Resolve protein sequence (cached per EC+organism key)
     seq_key = f"{ec}|{organism or ''}"
@@ -266,6 +349,7 @@ def get_kinetics_catpred(
     kcat = predict_catpred(sequence, smiles, "kcat", catpred_url)
     km = predict_catpred(sequence, smiles, "km", catpred_url)
 
+    prediction_cache[pred_key] = (kcat, km)
     return kcat, km
 
 

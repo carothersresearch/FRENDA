@@ -67,6 +67,7 @@ def assemble_ec(
     compound_cache: dict,
     sequence_cache: dict,
     smiles_cache: dict,
+    prediction_cache: dict,
     use_all_reactions: bool,
     organism: str | None,
     catpred_url: str | None,
@@ -122,6 +123,7 @@ def assemble_ec(
                     compound_names=compound_names,
                     sequence_cache=sequence_cache,
                     smiles_cache=smiles_cache,
+                    prediction_cache=prediction_cache,
                 )
                 if km_val is None:
                     km_val = pred_km
@@ -289,6 +291,7 @@ def run_pipeline(
     catpred_cache = load_cache(catpred_cache_path)
     sequence_cache: dict = catpred_cache.get("sequences", {})
     smiles_cache: dict = catpred_cache.get("smiles", {})
+    prediction_cache: dict = catpred_cache.get("predictions", {})
     compound_cache: dict = {}  # BRENDA name -> KEGG ID (eQuilibrator, rebuilt each run)
 
     thermo_cache = load_thermo_cache(thermo_cache_path)
@@ -319,6 +322,7 @@ def run_pipeline(
             compound_cache=compound_cache,
             sequence_cache=sequence_cache,
             smiles_cache=smiles_cache,
+            prediction_cache=prediction_cache,
             use_all_reactions=use_all_reactions,
             organism=effective_organism,
             catpred_url=catpred_url,
@@ -363,6 +367,7 @@ def run_pipeline(
     # -- Persist all caches ---------------------------------------------------
     catpred_cache["sequences"] = sequence_cache
     catpred_cache["smiles"] = smiles_cache
+    catpred_cache["predictions"] = prediction_cache
     catpred_cache[compound_cache_key] = compound_cache  # persist eQuilibrator lookups
     save_cache(catpred_cache, catpred_cache_path)
 

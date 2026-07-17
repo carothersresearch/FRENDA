@@ -50,7 +50,14 @@ def calculate_kcat_f_r(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def fill_nan_kcat(df: pd.DataFrame) -> pd.DataFrame:
-    """Impute missing Kcat_F / Kcat_R with the dataset-wide averages."""
+    """Impute missing Kcat_F / Kcat_R with the dataset-wide averages.
+
+    Flags which side(s) were imputed in a separate 'Kcat_Imputed' column
+    (e.g. "F", "R", "F; R") so downstream consumers of the numeric Kcat
+    string (e.g. odbm's Antimony writer) are unaffected, while the CSV
+    still records which values are real measurements/predictions vs.
+    dataset-average fallbacks.
+    """
     df[["_kf", "_kr"]] = df["Kcat"].str.extract(r"Kcat_F: (.*?); Kcat_R: (.*?)$")
     df["_kf"] = pd.to_numeric(df["_kf"], errors="coerce")
     df["_kr"] = pd.to_numeric(df["_kr"], errors="coerce")
@@ -58,6 +65,8 @@ def fill_nan_kcat(df: pd.DataFrame) -> pd.DataFrame:
     avg_f = df["_kf"].mean()
     avg_r = df["_kr"].mean()
 
+    was_nan_f = df["_kf"].isna()
+    was_nan_r = df["_kr"].isna()
     df["_kf"] = df["_kf"].fillna(avg_f)
     df["_kr"] = df["_kr"].fillna(avg_r)
 
@@ -68,28 +77,53 @@ def fill_nan_kcat(df: pd.DataFrame) -> pd.DataFrame:
     df["Kcat"] = df.apply(
         lambda row: f"Kcat_F: {_fmt(row['_kf'])}; Kcat_R: {_fmt(row['_kr'])}", axis=1
     )
+    df["Kcat_Imputed"] = [
+        "; ".join(flag for flag, was_nan in (("F", f), ("R", r)) if was_nan) or np.nan
+        for f, r in zip(was_nan_f, was_nan_r)
+    ]
     df.drop(columns=["_kf", "_kr"], inplace=True)
     return df
 
 
 def fix_nan_km(df: pd.DataFrame) -> pd.DataFrame:
-    """Impute NaN Km values with per-reaction average, then global average fallback."""
+    """Impute NaN Km values with per-reaction average, then global average fallback.
+
+    Records which compound IDs were imputed in a new 'Km_Imputed' column
+    (semicolon-separated KEGG IDs) rather than tagging the Km string itself,
+    so the Km column stays a clean 'Km_CXXXXX: <number>' list that downstream
+    numeric parsers (e.g. odbm) can consume unchanged.
+    """
     all_vals = _collect_float_values(df["Km"])
     global_avg = np.mean(all_vals) if all_vals else 0.1  # 0.1 mM default
 
-    df["Km"] = df["Km"].apply(lambda s: _impute_param_string(s, global_avg))
+    imputed_flags, km_values = [], []
+    for s in df["Km"]:
+        fixed, imputed_ids = _impute_param_string(s, global_avg)
+        km_values.append(fixed)
+        imputed_flags.append("; ".join(imputed_ids) if imputed_ids else np.nan)
+
+    df["Km"] = km_values
+    df["Km_Imputed"] = imputed_flags
     return df
 
 
 def fix_nan_ki(df: pd.DataFrame) -> pd.DataFrame:
     """Impute NaN KI values with per-row average, then global average fallback.
 
-    Rows with no KI data at all (NaN) are left unchanged.
+    Rows with no KI data at all (NaN) are left unchanged. Imputed compound
+    IDs are recorded in a new 'KI_Imputed' column (see fix_nan_km).
     """
     all_vals = _collect_float_values(df["KI"], sep=";")
     global_avg = np.mean(all_vals) if all_vals else 1.0  # 1.0 mM default
 
-    df["KI"] = df["KI"].apply(lambda s: _impute_param_string(s, global_avg, sep=";"))
+    imputed_flags, ki_values = [], []
+    for s in df["KI"]:
+        fixed, imputed_ids = _impute_param_string(s, global_avg, sep=";")
+        ki_values.append(fixed)
+        imputed_flags.append("; ".join(imputed_ids) if imputed_ids else np.nan)
+
+    df["KI"] = ki_values
+    df["KI_Imputed"] = imputed_flags
     return df
 
 
@@ -208,13 +242,19 @@ def _collect_float_values(series: pd.Series, sep: str = "; ") -> list[float]:
     return vals
 
 
-def _impute_param_string(cell: str, global_avg: float, sep: str = "; ") -> str:
+def _impute_param_string(
+    cell: str, global_avg: float, sep: str = "; "
+) -> tuple[str, list[str]]:
     """Replace 'nan' values in a 'key: value; key: value' string.
 
     Uses the row-level average of valid values; falls back to global_avg.
+
+    Returns:
+        (fixed_string, imputed_keys) — imputed_keys lists the raw keys
+        (e.g. "Km_C00080", "C00080_KI") whose value was filled in.
     """
     if not isinstance(cell, str):
-        return cell
+        return cell, []
 
     entries = [e.strip() for e in cell.split(sep) if e.strip()]
     row_vals = []
@@ -230,18 +270,22 @@ def _impute_param_string(cell: str, global_avg: float, sep: str = "; ") -> str:
 
     row_avg = np.mean(row_vals) if row_vals else global_avg
 
-    fixed = []
+    fixed, imputed_keys = [], []
     for e in entries:
         if ": " not in e:
             continue
         key, val = e.split(": ", 1)
         try:
             v = float(val)
-            fixed.append(f"{key}: {v if not np.isnan(v) else row_avg:.6g}")
+            if np.isnan(v):
+                fixed.append(f"{key}: {row_avg:.6g}")
+                imputed_keys.append(key)
+            else:
+                fixed.append(f"{key}: {v:.6g}")
         except ValueError:
             fixed.append(e)
 
-    return sep.join(fixed)
+    return sep.join(fixed), imputed_keys
 
 
 def _filter_inhibitor_ids(cell) -> object:
